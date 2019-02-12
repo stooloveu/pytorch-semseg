@@ -1,3 +1,6 @@
+import faulthandler;
+faulthandler.enable()
+
 import yaml
 import torch
 import argparse
@@ -41,9 +44,12 @@ def validate(cfg, args):
     state = convert_state_dict(torch.load(args.model_path)["model_state"])
     model.load_state_dict(state)
     model.eval()
+    model.float()
     model.to(device)
+    model = torch.nn.DataParallel(model, device_ids=range(torch.cuda.device_count()))
 
     for i, (images, labels) in enumerate(valloader):
+
         start_time = timeit.default_timer()
 
         images = images.to(device)

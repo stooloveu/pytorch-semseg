@@ -343,31 +343,32 @@ if __name__ == "__main__":
     import os
     import scipy.misc as m
     from ptsemseg.loader.cityscapes_loader import cityscapesLoader as cl
-
+    from ptsemseg.utils import convert_state_dict
     psp = pspnet(version="cityscapes")
 
     # Just need to do this one time
-    caffemodel_dir_path = "PATH_TO_PSPNET_DIR/evaluation/model"
-    psp.load_pretrained_model(
-        model_path=os.path.join(caffemodel_dir_path, "pspnet101_cityscapes.caffemodel")
-    )
+    # caffemodel_dir_path = "../../pretrained_models"
+    # psp.load_pretrained_model(
+    #     model_path=os.path.join(caffemodel_dir_path, "pspnet101_cityscapes.caffemodel")
+    # )
     # psp.load_pretrained_model(model_path=os.path.join(caffemodel_dir_path,
     #                            'pspnet50_ADE20K.caffemodel'))
     # psp.load_pretrained_model(model_path=os.path.join(caffemodel_dir_path,
     #                           'pspnet101_VOC2012.caffemodel'))
     #
-    # psp.load_state_dict(torch.load('psp.pth'))
+    state = convert_state_dict(torch.load('pretrained_models/pspnet_101_cityscapes.pth')["model_state"])
+    psp.load_state_dict(state)
 
     psp.float()
     psp.cuda(cd)
     psp.eval()
 
-    dataset_root_dir = "PATH_TO_CITYSCAPES_DIR"
+    dataset_root_dir = 'datasets/cityscapes/'
     dst = cl(root=dataset_root_dir)
     img = m.imread(
         os.path.join(
             dataset_root_dir,
-            "leftImg8bit/demoVideo/stuttgart_00/stuttgart_00_000000_000010_leftImg8bit.png",
+            "leftImg8bit/val/frankfurt/frankfurt_000000_020321_leftImg8bit.png",
         )
     )
     m.imsave("cropped.png", img)

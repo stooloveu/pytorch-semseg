@@ -1,0 +1,1 @@
+python validate.py --config configs/psp_cityscapes.yml --model_path pretrained_models/pspnet_101_cityscapes.pth --no-eval_flip

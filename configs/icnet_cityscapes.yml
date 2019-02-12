@@ -1,0 +1,22 @@
+model:
+    arch: icnet
+data:
+    dataset: cityscapes
+    train_split: train
+    val_split: val
+    img_rows: 1025
+    img_cols: 2049
+    path: datasets/cityscapes/
+training:
+    train_iters: 1
+    batch_size: 1
+    val_interval: 500
+    print_interval: 25
+    optimizer:
+        lr: 1.0e-4
+    l_rate: 1.0e-4
+    l_schedule:
+    momentum: 0.99
+    weight_decay: 0.0005
+    resume: pretrained_models/icnetBN_cityscapes_trainval_90k.pth
+    visdom: False
