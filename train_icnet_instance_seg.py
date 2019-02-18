@@ -6,9 +6,11 @@ import torch
 import random
 import argparse
 import numpy as np
+import torch.nn as nn
 
 from torch.utils import data
 from tqdm import tqdm
+
 
 from ptsemseg.models import get_model
 from ptsemseg.loss import get_loss_function
@@ -18,8 +20,42 @@ from ptsemseg.metrics import runningScore, averageMeter
 from ptsemseg.augmentations import get_composed_augmentations
 from ptsemseg.schedulers import get_scheduler
 from ptsemseg.optimizers import get_optimizer
+from ptsemseg.utils import convert_state_dict
 
 from tensorboardX import SummaryWriter
+
+class FullModel(nn.Module):
+  def __init__(self, model, loss):
+    super(FullModel, self).__init__()
+    self.model = model
+    self.loss = loss
+
+  def forward(self, targets, *inputs):
+    # print(inputs.get_device())
+    # print(targets.get_device())
+    
+
+    outputs = self.model(*inputs)
+    loss = self.loss(outputs, targets)
+    return torch.unsqueeze(loss,0),outputs
+    
+
+def DataParallel_withLoss(model,loss,**kwargs):
+    model=FullModel(model, loss)
+    if 'device_ids' in kwargs.keys():
+        device_ids=kwargs['device_ids']
+    else:
+        device_ids=None
+    if 'output_device' in kwargs.keys():
+        output_device=kwargs['output_device']
+    else:
+        output_device=None
+    if 'cuda' in kwargs.keys():
+        cudaID=kwargs['cuda'] 
+        model=torch.nn.DataParallel(model, device_ids=device_ids, output_device=output_device).cuda(cudaID)
+    else:
+        model=torch.nn.DataParallel(model, device_ids=device_ids, output_device=output_device).cuda()
+    return model
 
 
 def train(cfg, writer, logger):
@@ -74,7 +110,7 @@ def train(cfg, writer, logger):
     # Setup Model
     model = get_model(cfg["model"], n_classes).to(device)
 
-    model = torch.nn.DataParallel(model, device_ids=range(torch.cuda.device_count()))
+    # model = torch.nn.DataParallel(model, device_ids=range(torch.cuda.device_count()))
 
     # Setup optimizer, lr_scheduler and loss function
     optimizer_cls = get_optimizer(cfg)
@@ -88,6 +124,8 @@ def train(cfg, writer, logger):
     loss_fn = get_loss_function(cfg)
     logger.info("Using loss {}".format(loss_fn))
 
+
+
     start_iter = 0
     if cfg["training"]["resume"] is not None:
         if os.path.isfile(cfg["training"]["resume"]):
@@ -95,7 +133,9 @@ def train(cfg, writer, logger):
                 "Loading model and optimizer from checkpoint '{}'".format(cfg["training"]["resume"])
             )
             checkpoint = torch.load(cfg["training"]["resume"])
-            model.load_state_dict(checkpoint["model_state"])
+            state = convert_state_dict(checkpoint["model_state"])
+            # model.load_state_dict(checkpoint["model_state"])
+            model.load_state_dict(state)
             if not args.load_weight_only:
                 optimizer.load_state_dict(checkpoint["optimizer_state"])
                 scheduler.load_state_dict(checkpoint["scheduler_state"])
@@ -106,6 +146,7 @@ def train(cfg, writer, logger):
                 )
             )
             else:
+                # start_iter = -1
                 logger.info(
                 "Loaded checkpoint '{}' (iter unknown)".format(
                     cfg["training"]["resume"]
@@ -121,10 +162,12 @@ def train(cfg, writer, logger):
     best_iou = -100.0
     i = start_iter
     flag = True
+    model = DataParallel_withLoss(model,loss_fn)
+
 
     while i <= cfg["training"]["train_iters"] and flag:
         for (images, labels) in trainloader:
-            i += 1
+
             start_ts = time.time()
             scheduler.step()
             model.train()
@@ -132,9 +175,10 @@ def train(cfg, writer, logger):
             labels = labels.to(device)
 
             optimizer.zero_grad()
-            outputs = model(images)
+            loss, _ = model(labels, images)
+            loss = loss.sum()
 
-            loss = loss_fn(input=outputs, target=labels)
+            # loss = loss_fn(input=outputs, target=labels)
 
             loss.backward()
             optimizer.step()
@@ -164,8 +208,10 @@ def train(cfg, writer, logger):
                         images_val = images_val.to(device)
                         labels_val = labels_val.to(device)
 
-                        outputs = model(images_val)
-                        val_loss = loss_fn(input=outputs, target=labels_val)
+                        # outputs = model(images_val)
+                        # val_loss = loss_fn(input=outputs, target=labels_val)
+                        val_loss, outputs = model(labels_val, images_val)
+                        val_loss = val_loss.sum()
 
                         pred = outputs.data.max(1)[1].cpu().numpy()
                         gt = labels_val.data.cpu().numpy()
@@ -207,6 +253,7 @@ def train(cfg, writer, logger):
             if (i + 1) == cfg["training"]["train_iters"]:
                 flag = False
                 break
+            i += 1
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ icnet_specs = {
 }
 
 
-class icnet(nn.Module):
+class icnet_is(nn.Module):
 
     """
     Image Cascade Network
@@ -42,7 +42,7 @@ class icnet(nn.Module):
         is_batchnorm=True,
     ):
 
-        super(icnet, self).__init__()
+        super(icnet_is, self).__init__()
 
         bias = not is_batchnorm
 

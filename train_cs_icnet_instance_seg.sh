@@ -1,0 +1,1 @@
+python train_icnet_instance_seg.py --config configs/icnet_cityscapes_instance_segmentation.yml --load_weight_only

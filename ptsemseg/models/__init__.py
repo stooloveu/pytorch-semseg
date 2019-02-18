@@ -6,6 +6,7 @@ from ptsemseg.models.segnet import segnet
 from ptsemseg.models.unet import unet
 from ptsemseg.models.pspnet import pspnet
 from ptsemseg.models.icnet import icnet
+from ptsemseg.models.icnet_is import icnet_is
 from ptsemseg.models.linknet import linknet
 from ptsemseg.models.frrn import frrn
 
@@ -41,6 +42,9 @@ def get_model(model_dict, n_classes, version=None):
     elif name == "icnetBN":
         model = model(n_classes=n_classes, **param_dict)
 
+    elif name == "icnet_is":
+        model = model(n_classes=n_classes, **param_dict)
+
     else:
         model = model(n_classes=n_classes, **param_dict)
 
@@ -57,6 +61,7 @@ def _get_model_instance(name):
             "segnet": segnet,
             "pspnet": pspnet,
             "icnet": icnet,
+            "icnet_is": icnet_is,
             "icnetBN": icnet,
             "linknet": linknet,
             "frrnA": frrn,

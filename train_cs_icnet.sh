@@ -1,0 +1,1 @@
+python train.py --config configs/icnet_cityscapes.yml --load_weight_only

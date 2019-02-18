@@ -1,5 +1,5 @@
 model:
-    arch: icnet
+    arch: icnet_is
 data:
     dataset: cityscapes
     train_split: train
@@ -9,8 +9,8 @@ data:
     path: datasets/cityscapes/
 training:
     n_workers: 12
-    train_iters: 1
-    batch_size: 4
+    train_iters: 25
+    batch_size: 16
     val_interval: 500
     print_interval: 25
     optimizer:
