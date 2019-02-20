@@ -14,6 +14,8 @@ from tqdm import tqdm
 
 from ptsemseg.models import get_model
 from ptsemseg.loss import get_loss_function
+from ptsemseg.loss.loss import multi_scale_discrimitive_loss_cs
+from ptsemseg.loss.loss import multi_scale_cross_entropy2d_inst
 from ptsemseg.loader import get_loader
 from ptsemseg.utils import get_logger
 from ptsemseg.metrics import runningScore, averageMeter
@@ -25,20 +27,35 @@ from ptsemseg.utils import convert_state_dict
 from tensorboardX import SummaryWriter
 
 class FullModel(nn.Module):
-  def __init__(self, model, loss):
-    super(FullModel, self).__init__()
-    self.model = model
-    self.loss = loss
+    def __init__(self, model, loss):
+        super(FullModel, self).__init__()
+        self.model = model
+        self.loss = multi_scale_cross_entropy2d_inst
+        self.loss_d = multi_scale_discrimitive_loss_cs
 
-  def forward(self, targets, *inputs):
-    # print(inputs.get_device())
-    # print(targets.get_device())
-    
+    def forward(self, targets, targets_inst, *inputs, return_aux_info = False):
+        # print(inputs.get_device())
+        # print(targets.get_device())
+        # if self.eval:
+        #     import ipdb
+        #     ipdb.set_trace() 
+        outputs = self.model(*inputs)
+        # if not no_ref:
+        if self.training:
+            loss = self.loss(outputs[0:3], targets)
+            loss_d = self.loss_d(outputs[3:6], targets_inst)
+        else:
+            loss = self.loss(outputs[0], targets)
+            loss_d = self.loss_d(outputs[1], targets_inst)
 
-    outputs = self.model(*inputs)
-    loss = self.loss(outputs, targets)
-    return torch.unsqueeze(loss,0),outputs
-    
+        if return_aux_info:
+            aux_info = (torch.unsqueeze(loss, 0), torch.unsqueeze(loss_d, 0))
+            return torch.unsqueeze(loss + loss_d, 0), outputs, aux_info
+        else:
+            return torch.unsqueeze(loss + loss_d, 0), outputs
+        # else:
+        #     return outputs
+        
 
 def DataParallel_withLoss(model,loss,**kwargs):
     model=FullModel(model, loss)
@@ -125,7 +142,7 @@ def train(cfg, writer, logger):
     logger.info("Using loss {}".format(loss_fn))
 
 
-
+   
     start_iter = 0
     if cfg["training"]["resume"] is not None:
         if os.path.isfile(cfg["training"]["resume"]):
@@ -133,25 +150,42 @@ def train(cfg, writer, logger):
                 "Loading model and optimizer from checkpoint '{}'".format(cfg["training"]["resume"])
             )
             checkpoint = torch.load(cfg["training"]["resume"])
-            state = convert_state_dict(checkpoint["model_state"])
-            # model.load_state_dict(checkpoint["model_state"])
-            model.load_state_dict(state)
+            
             if not args.load_weight_only:
+                model = DataParallel_withLoss(model,loss_fn)
+                model.load_state_dict(checkpoint["model_state"])
                 optimizer.load_state_dict(checkpoint["optimizer_state"])
+
+                # !!!
+                checkpoint["scheduler_state"]['last_epoch'] = -1
                 scheduler.load_state_dict(checkpoint["scheduler_state"])
                 start_iter = checkpoint["epoch"]
+                start_iter = 0
+                # import ipdb
+                # ipdb.set_trace()
                 logger.info(
                 "Loaded checkpoint '{}' (iter {})".format(
                     cfg["training"]["resume"], checkpoint["epoch"]
                 )
             )
             else:
+                pretrained_dict = convert_state_dict(checkpoint["model_state"])
+                model_dict = model.state_dict()
+                # 1. filter out unnecessary keys
+                pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+                # 2. overwrite entries in the existing state dict
+                model_dict.update(pretrained_dict) 
+                # 3. load the new state dict
+                model.load_state_dict(model_dict)
+                model = DataParallel_withLoss(model,loss_fn)
+                # import ipdb
+                # ipdb.set_trace()
                 # start_iter = -1
                 logger.info(
-                "Loaded checkpoint '{}' (iter unknown)".format(
+                "Loaded checkpoint '{}' (iter unknown, from pretrained icnet model)".format(
                     cfg["training"]["resume"]
                 )
-            )
+                )
 
         else:
             logger.info("No checkpoint found at '{}'".format(cfg["training"]["resume"]))
@@ -162,22 +196,25 @@ def train(cfg, writer, logger):
     best_iou = -100.0
     i = start_iter
     flag = True
-    model = DataParallel_withLoss(model,loss_fn)
+
 
 
     while i <= cfg["training"]["train_iters"] and flag:
-        for (images, labels) in trainloader:
+        for (images, labels, inst_labels) in trainloader:
 
             start_ts = time.time()
             scheduler.step()
             model.train()
             images = images.to(device)
             labels = labels.to(device)
-
+            inst_labels = inst_labels.to(device)
             optimizer.zero_grad()
-            loss, _ = model(labels, images)
-            loss = loss.sum()
 
+            loss, _, aux_info = model(labels, inst_labels, images, return_aux_info = True)
+            loss = loss.sum()
+            loss_sem = aux_info[0].sum()
+            loss_inst = aux_info[1].sum()
+            
             # loss = loss_fn(input=outputs, target=labels)
 
             loss.backward()
@@ -186,11 +223,13 @@ def train(cfg, writer, logger):
             time_meter.update(time.time() - start_ts)
 
             if (i + 1) % cfg["training"]["print_interval"] == 0:
-                fmt_str = "Iter [{:d}/{:d}]  Loss: {:.4f}  Time/Image: {:.4f}"
+                fmt_str = "Iter [{:d}/{:d}]  Loss: {:.4f} (Sem:{:.4f}/Inst:{:.4f})  Time/Image: {:.4f}"
                 print_str = fmt_str.format(
                     i + 1,
                     cfg["training"]["train_iters"],
                     loss.item(),
+                    loss_sem.item(),
+                    loss_inst.item(),
                     time_meter.avg / cfg["training"]["batch_size"],
                 )
 
@@ -202,15 +241,17 @@ def train(cfg, writer, logger):
             if (i + 1) % cfg["training"]["val_interval"] == 0 or (i + 1) == cfg["training"][
                 "train_iters"
             ]:
+
                 model.eval()
+
                 with torch.no_grad():
-                    for i_val, (images_val, labels_val) in tqdm(enumerate(valloader)):
+                    for i_val, (images_val, labels_val, inst_labels_val) in tqdm(enumerate(valloader)):
                         images_val = images_val.to(device)
                         labels_val = labels_val.to(device)
-
+                        inst_labels_val = inst_labels_val.to(device)
                         # outputs = model(images_val)
                         # val_loss = loss_fn(input=outputs, target=labels_val)
-                        val_loss, outputs = model(labels_val, images_val)
+                        val_loss, (outputs, outputs_inst) = model(labels_val, inst_labels_val, images_val)
                         val_loss = val_loss.sum()
 
                         pred = outputs.data.max(1)[1].cpu().numpy()

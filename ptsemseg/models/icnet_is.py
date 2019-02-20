@@ -36,6 +36,7 @@ class icnet_is(nn.Module):
     def __init__(
         self,
         n_classes=19,
+        n_instance_feature_dim = 12,
         block_config=[3, 4, 6, 3],
         input_size=(1025, 2049),
         version=None,
@@ -51,7 +52,7 @@ class icnet_is(nn.Module):
         )
         self.n_classes = icnet_specs[version]["n_classes"] if version is not None else n_classes
         self.input_size = icnet_specs[version]["input_size"] if version is not None else input_size
-
+        self.n_instance_feature_dim = n_instance_feature_dim
         # Encoder
         self.convbnrelu1_1 = conv2DBatchNormRelu(
             in_channels=3,
@@ -95,6 +96,16 @@ class icnet_is(nn.Module):
             include_range="conv",
             is_batchnorm=is_batchnorm,
         )
+        self.res_block3_conv_inst = residualBlockPSP(
+            self.block_config[1],
+            128,
+            64,
+            256,
+            2,
+            1,
+            include_range="conv",
+            is_batchnorm=is_batchnorm,
+        )
         self.res_block3_identity = residualBlockPSP(
             self.block_config[1],
             128,
@@ -116,7 +127,7 @@ class icnet_is(nn.Module):
 
         # Pyramid Pooling Module
         self.pyramid_pooling = pyramidPooling(
-            1024, [6, 3, 2, 1], model_name="icnet", fusion_mode="sum", is_batchnorm=is_batchnorm
+            1024, [6, 3, 2, 1], model_name="icnet_is", fusion_mode="sum", is_batchnorm=is_batchnorm
         )
 
         # Final conv layer with kernel 1 in sub4 branch
@@ -129,6 +140,17 @@ class icnet_is(nn.Module):
             bias=bias,
             is_batchnorm=is_batchnorm,
         )
+
+        self.conv5_4_k1_inst = conv2DBatchNormRelu(
+            in_channels=1024,
+            k_size=1,
+            n_filters=256,
+            padding=0,
+            stride=1,
+            bias=bias,
+            is_batchnorm=is_batchnorm,
+        )
+
 
         # High-resolution (sub1) branch
         self.convbnrelu1_sub1 = conv2DBatchNormRelu(
@@ -158,7 +180,17 @@ class icnet_is(nn.Module):
             bias=bias,
             is_batchnorm=is_batchnorm,
         )
+        self.convbnrelu3_sub1_inst = conv2DBatchNormRelu(
+            in_channels=32,
+            k_size=3,
+            n_filters=64,
+            padding=1,
+            stride=2,
+            bias=bias,
+            is_batchnorm=is_batchnorm,
+        )
         self.classification = nn.Conv2d(128, self.n_classes, 1, 1, 0)
+        self.inst_feature_embedding = nn.Conv2d(128, self.n_instance_feature_dim, 1, 1, 0)
 
         # Cascade Feature Fusion Units
         self.cff_sub24 = cascadeFeatureFusion(
@@ -168,8 +200,16 @@ class icnet_is(nn.Module):
             self.n_classes, 128, 64, 128, is_batchnorm=is_batchnorm
         )
 
+        # Cascade Instance Feature Fusion Units
+        self.cff_sub24_inst = cascadeFeatureFusion(
+            self.n_instance_feature_dim, 256, 256, 128, is_batchnorm=is_batchnorm
+        )
+        self.cff_sub12_inst = cascadeFeatureFusion(
+            self.n_instance_feature_dim, 128, 64, 128, is_batchnorm=is_batchnorm
+        )
+
         # Define auxiliary loss function
-        self.loss = multi_scale_cross_entropy2d
+        # self.loss = multi_scale_cross_entropy2d
 
     def forward(self, x):
         h, w = x.shape[2:]
@@ -188,8 +228,10 @@ class icnet_is(nn.Module):
         x_sub2 = F.max_pool2d(x_sub2, 3, 2, 1)
 
         # H/8, W/8 -> H/16, W/16
-        x_sub2 = self.res_block2(x_sub2)
-        x_sub2 = self.res_block3_conv(x_sub2)
+        x_sub2_ = self.res_block2(x_sub2)
+        x_sub2 = self.res_block3_conv(x_sub2_)
+
+        x_sub2_inst = self.res_block3_conv_inst(x_sub2_)
         # H/16, W/16 -> H/32, W/32
         x_sub4 = F.interpolate(
             x_sub2, size=get_interp_size(x_sub2, s_factor=2), mode="bilinear", align_corners=True
@@ -199,24 +241,36 @@ class icnet_is(nn.Module):
         x_sub4 = self.res_block4(x_sub4)
         x_sub4 = self.res_block5(x_sub4)
 
-        x_sub4 = self.pyramid_pooling(x_sub4)
-        x_sub4 = self.conv5_4_k1(x_sub4)
+        x_sub4_ = self.pyramid_pooling(x_sub4)
+        x_sub4 = self.conv5_4_k1(x_sub4_)
+        
+        x_sub4_inst = self.conv5_4_k1_inst(x_sub4_)
 
         x_sub1 = self.convbnrelu1_sub1(x)
-        x_sub1 = self.convbnrelu2_sub1(x_sub1)
-        x_sub1 = self.convbnrelu3_sub1(x_sub1)
+        x_sub1_ = self.convbnrelu2_sub1(x_sub1)
+        x_sub1 = self.convbnrelu3_sub1(x_sub1_)
+
+        x_sub1_inst = self.convbnrelu3_sub1_inst(x_sub1_)
+
 
         x_sub24, sub4_cls = self.cff_sub24(x_sub4, x_sub2)
         x_sub12, sub24_cls = self.cff_sub12(x_sub24, x_sub1)
 
+        x_sub24_inst, sub4_inst_fe = self.cff_sub24_inst(x_sub4_inst, x_sub2_inst)
+        x_sub12_inst, sub24_inst_fe = self.cff_sub12_inst(x_sub24_inst, x_sub1_inst)
+
         x_sub12 = F.interpolate(
             x_sub12, size=get_interp_size(x_sub12, z_factor=2), mode="bilinear", align_corners=True
         )
+        x_sub12_inst = F.interpolate(
+            x_sub12_inst, size=get_interp_size(x_sub12_inst, z_factor=2), mode="bilinear", align_corners=True
+        )
         # x_sub4 = self.res_block3_identity(x_sub4)
         sub124_cls = self.classification(x_sub12)
+        sub124_inst_fe = self.inst_feature_embedding(x_sub12_inst)
 
         if self.training:
-            return (sub124_cls, sub24_cls, sub4_cls)
+            return (sub124_cls, sub24_cls, sub4_cls, sub124_inst_fe, sub24_inst_fe, sub4_inst_fe)
         else:
             sub124_cls = F.interpolate(
                 sub124_cls,
@@ -224,7 +278,13 @@ class icnet_is(nn.Module):
                 mode="bilinear",
                 align_corners=True,
             )
-            return sub124_cls
+            sub124_inst_fe = F.interpolate(
+                sub124_inst_fe,
+                size=get_interp_size(sub124_inst_fe, z_factor=4),
+                mode="bilinear",
+                align_corners=True,
+            )
+            return sub124_cls, sub124_inst_fe
 
     def load_pretrained_model(self, model_path):
         """

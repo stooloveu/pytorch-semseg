@@ -8,9 +8,9 @@ data:
     img_cols: 2049
     path: datasets/cityscapes/
 training:
-    n_workers: 1
-    train_iters: 10
-    batch_size: 4
+    n_workers: 6
+    train_iters: 10000
+    batch_size: 12
     val_interval: 1000
     print_interval: 1
     optimizer:
@@ -30,5 +30,5 @@ training:
 
     momentum: 0.9
     weight_decay: 0.0001
-    resume: pretrained_models/icnetBN_cityscapes_trainval_90k.pth
+    resume: runs/icnet_cityscapes_instance_segmentation_resume/92175/icnet_is_cityscapes_instance_segmentation_best_model.pkl
     visdom: False
