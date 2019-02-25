@@ -1,1 +1,1 @@
-python train_icnet_instance_seg.py --config configs/icnet_cityscapes_instance_segmentation_resume.yml
+python train_icnet_instance_seg.py --config configs/icnet_cityscapes_instance_segmentation_resume.yml --not_load_optimizer

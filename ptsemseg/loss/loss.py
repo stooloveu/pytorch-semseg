@@ -93,7 +93,7 @@ def bootstrapped_cross_entropy2d(input, target, K, weight=None, size_average=Tru
     return loss / float(batch_size)
 
 
-def discrimitive_loss_cs(input, target, delta_var = 0.5, delta_dist = 1.5, param_var = 1.0, param_dist = 1.0, param_reg = 0.1):
+def discrimitive_loss_cs(input, target, delta_var = 0.25, delta_dist = 1.0, delta_reg = 6.0, param_var = 1.0, param_dist = 1.0, param_reg = 0.1):
     # import ipdb
     has_instance_classes = [
             24,
@@ -146,23 +146,26 @@ def discrimitive_loss_cs(input, target, delta_var = 0.5, delta_dist = 1.5, param
 
 
         # dist term
-        if inst_num > 1:
-            # feat_dim, inst_num, inst_num
-            means_a = inst_means.unsqueeze(2).expand(feat_dim, inst_num, inst_num)
-            means_b = means_a.permute(0, 2, 1)
-            diff = means_a - means_b
+        for lbl in has_instance_classes:
+            inst_num_lbl = torch.sum(inst_lbls // 1000 == lbl)
+            if inst_num_lbl > 1:
+                # feat_dim, inst_num, inst_num
+                inst_means_lbl = inst_means[:, inst_lbls // 1000 == lbl]
+                means_a = inst_means_lbl.unsqueeze(2).expand(feat_dim, inst_num_lbl, inst_num_lbl)
+                means_b = means_a.permute(0, 2, 1)
+                diff = means_a - means_b
 
-            margin = Variable(2 * delta_dist * (1.0 - torch.eye(inst_num))).to(input.device)
-            c_dist = torch.sum(torch.clamp(margin - torch.norm(diff,  dim=0), min=0) ** 2)
-            l_dist += c_dist / (2 * inst_num * (inst_num - 1))
+                margin = Variable(2 * delta_dist * (1.0 - torch.eye(inst_num_lbl))).to(input.device)
+                c_dist = torch.sum(torch.clamp(margin - torch.norm(diff,  dim=0), min=0) ** 2)
+                l_dist += c_dist / (2 * inst_num_lbl * (inst_num_lbl - 1))
         
 
   
         # reg term
-        l_reg += torch.mean(torch.norm(inst_means, dim = 0))
+        l_reg += torch.clamp(torch.mean(torch.norm(inst_means, dim = 0)) - delta_reg, min = 0)
 
-    # print("l_var = {:.4f}   l_dist = {:.4f}  l_reg = {:.4f}".format(l_var.item(), l_dist.item(), l_reg.item()))
-    l_d =  l_var + l_dist + l_reg
+    print("l_var = {:.4f}   l_dist = {:.4f}  l_reg = {:.4f}".format(l_var.item(), l_dist.item(), l_reg.item()))
+    l_d =  param_var * l_var + param_dist * l_dist + param_reg * l_reg
     l_d /= bs
     # ipdb.set_trace()
     return l_d

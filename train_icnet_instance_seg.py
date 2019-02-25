@@ -50,9 +50,11 @@ class FullModel(nn.Module):
 
         if return_aux_info:
             aux_info = (torch.unsqueeze(loss, 0), torch.unsqueeze(loss_d, 0))
-            return torch.unsqueeze(loss + loss_d, 0), outputs, aux_info
+            return torch.unsqueeze(0 * loss + loss_d, 0), outputs, aux_info
+            # return torch.unsqueeze(loss_d, 0), outputs, aux_info
         else:
-            return torch.unsqueeze(loss + loss_d, 0), outputs
+            return torch.unsqueeze(0 * loss + loss_d, 0), outputs
+            # return torch.unsqueeze(loss_d, 0), outputs
         # else:
         #     return outputs
         
@@ -74,14 +76,17 @@ def DataParallel_withLoss(model,loss,**kwargs):
         model=torch.nn.DataParallel(model, device_ids=device_ids, output_device=output_device).cuda()
     return model
 
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+            return param_group['lr']
 
 def train(cfg, writer, logger):
 
     # Setup seeds
-    torch.manual_seed(cfg.get("seed", 1337))
-    torch.cuda.manual_seed(cfg.get("seed", 1337))
-    np.random.seed(cfg.get("seed", 1337))
-    random.seed(cfg.get("seed", 1337))
+    # torch.manual_seed(cfg.get("seed", 1337))
+    # torch.cuda.manual_seed(cfg.get("seed", 1337))
+    # np.random.seed(cfg.get("seed", 1337))
+    # random.seed(cfg.get("seed", 1337))
 
     # Setup device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -154,12 +159,13 @@ def train(cfg, writer, logger):
             if not args.load_weight_only:
                 model = DataParallel_withLoss(model,loss_fn)
                 model.load_state_dict(checkpoint["model_state"])
-                optimizer.load_state_dict(checkpoint["optimizer_state"])
+                if not args.not_load_optimizer:
+                    optimizer.load_state_dict(checkpoint["optimizer_state"])
 
                 # !!!
-                checkpoint["scheduler_state"]['last_epoch'] = -1
-                scheduler.load_state_dict(checkpoint["scheduler_state"])
-                start_iter = checkpoint["epoch"]
+                # checkpoint["scheduler_state"]['last_epoch'] = -1
+                # scheduler.load_state_dict(checkpoint["scheduler_state"])
+                # start_iter = checkpoint["epoch"]
                 start_iter = 0
                 # import ipdb
                 # ipdb.set_trace()
@@ -223,24 +229,23 @@ def train(cfg, writer, logger):
             time_meter.update(time.time() - start_ts)
 
             if (i + 1) % cfg["training"]["print_interval"] == 0:
-                fmt_str = "Iter [{:d}/{:d}]  Loss: {:.4f} (Sem:{:.4f}/Inst:{:.4f})  Time/Image: {:.4f}"
+                fmt_str = "Iter [{:d}/{:d}]  Loss: {:.4f} (Sem:{:.4f}/Inst:{:.4f})  LR:{:.5f}  Time/Image: {:.4f}"
                 print_str = fmt_str.format(
                     i + 1,
                     cfg["training"]["train_iters"],
                     loss.item(),
                     loss_sem.item(),
                     loss_inst.item(),
+                    scheduler.get_lr()[0],
                     time_meter.avg / cfg["training"]["batch_size"],
                 )
-
-                print(print_str)
+                
+                # print(print_str)
                 logger.info(print_str)
                 writer.add_scalar("loss/train_loss", loss.item(), i + 1)
                 time_meter.reset()
 
-            if (i + 1) % cfg["training"]["val_interval"] == 0 or (i + 1) == cfg["training"][
-                "train_iters"
-            ]:
+            if (i + 1) % cfg["training"]["val_interval"] == 0 or (i + 1) == cfg["training"]["train_iters"]:
 
                 model.eval()
 
@@ -291,6 +296,20 @@ def train(cfg, writer, logger):
                     )
                     torch.save(state, save_path)
 
+            if (i + 1) % cfg["training"]["save_interval"] == 0 or (i + 1) == cfg["training"]["train_iters"]:
+                state = {
+                    "epoch": i + 1,
+                    "model_state": model.state_dict(),
+                    "optimizer_state": optimizer.state_dict(),
+                    "scheduler_state": scheduler.state_dict(),
+                    "best_iou": best_iou,
+                }
+                save_path = os.path.join(
+                    writer.file_writer.get_logdir(),
+                    "{}_{}_{:05d}_model.pkl".format(cfg["model"]["arch"], cfg["data"]["dataset"], i+1),
+                )
+                torch.save(state, save_path)
+
             if (i + 1) == cfg["training"]["train_iters"]:
                 flag = False
                 break
@@ -314,6 +333,15 @@ if __name__ == "__main__":
                               False by default",
     )
     parser.set_defaults(load_weight_only=False)
+    parser.add_argument(
+        "--not_load_optimizer",
+        dest="not_load_optimizer",
+        action="store_true",
+        help="Do not load optimizer |\
+                              False by default",
+    )
+    parser.set_defaults(load_weight_only=False)
+    parser.set_defaults(not_load_optimizer=False)
     args = parser.parse_args()
 
     with open(args.config) as fp:

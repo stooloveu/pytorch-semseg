@@ -1,8 +1,9 @@
 import os
 import torch
 import numpy as np
+import scipy.misc as m
 import imageio
-from PIL import Image
+
 from torch.utils import data
 
 from ptsemseg.utils import recursive_glob
@@ -176,7 +177,7 @@ class cityscapesInstLoader(data.Dataset):
         lbl = imageio.imread(lbl_path)
         lbl = self.encode_segmap(np.array(lbl, dtype=np.uint8))
 
-        inst_lbl = imageio.imread(inst_lbl_path)
+        inst_lbl = m.imread(inst_lbl_path)
         inst_lbl = np.array(inst_lbl, dtype=np.int32)
         # inst_lbl = self.encode_inst_segmap(np.array(inst_lbl, dtype=np.uint16))
 
@@ -196,7 +197,7 @@ class cityscapesInstLoader(data.Dataset):
         :param img:
         :param lbl:
         """
-        img = np.array(Image.fromarray(img).resize((self.img_size[0], self.img_size[1])))  # uint8 with RGB mode
+        img = m.imresize(img, (self.img_size[0], self.img_size[1]))  # uint8 with RGB mode
         img = img[:, :, ::-1]  # RGB -> BGR
         img = img.astype(np.float64)
         img -= self.mean
@@ -209,11 +210,11 @@ class cityscapesInstLoader(data.Dataset):
 
         classes = np.unique(lbl)
         lbl = lbl.astype(float)
-        lbl = np.array(Image.fromarray(lbl).resize((self.img_size[0], self.img_size[1]), resample = Image.NEAREST))
+        lbl = m.imresize(lbl, (self.img_size[0], self.img_size[1]), "nearest", mode="F")
         lbl = lbl.astype(int)
 
         inst_lbl = inst_lbl.astype(float)
-        inst_lbl = np.array(Image.fromarray(inst_lbl).resize((self.img_size[0], self.img_size[1]), resample = Image.NEAREST))
+        inst_lbl = m.imresize(inst_lbl, (self.img_size[0], self.img_size[1]), "nearest", mode="F")
         inst_lbl = inst_lbl.astype(int)
 
         if not np.all(classes == np.unique(lbl)):

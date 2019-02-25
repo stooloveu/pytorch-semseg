@@ -9,26 +9,31 @@ data:
     path: datasets/cityscapes/
 training:
     n_workers: 6
-    train_iters: 10000
+    train_iters: 8000
     batch_size: 12
-    val_interval: 1000
+    val_interval: 8000
+    save_interval: 500
     print_interval: 1
     optimizer:
-        name: asgd
-        lr: 1.0e-3
+        name: adamax
+        lr: 6.0e-5
+        # name: adadelta
+        # lr: 2.0e-4
     
     loss: 
         name: multi_scale_cross_entropy
 
     lr_schedule: 
         name: poly_lr
-        max_iter: 90000
-        decay_iter: 1
+        max_iter: 12000
+        decay_iter: 8000
         gamma: 0.9
         last_epoch: -1
 
 
     momentum: 0.9
     weight_decay: 0.0001
-    resume: runs/icnet_cityscapes_instance_segmentation_resume/92175/icnet_is_cityscapes_instance_segmentation_best_model.pkl
+    resume: runs/icnet_cityscapes_instance_segmentation_resume/22884/icnet_is_cityscapes_instance_segmentation_00500_model.pkl
+
+    # resume: runs/icnet_cityscapes_instance_segmentation/27372/icnet_is_cityscapes_instance_segmentation_best_model.pkl 
     visdom: False
