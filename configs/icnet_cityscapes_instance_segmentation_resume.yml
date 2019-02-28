@@ -16,7 +16,7 @@ training:
     print_interval: 1
     optimizer:
         name: adamax
-        lr: 6.0e-5
+        lr: 4.0e-5
         # name: adadelta
         # lr: 2.0e-4
     
@@ -33,7 +33,7 @@ training:
 
     momentum: 0.9
     weight_decay: 0.0001
-    resume: runs/icnet_cityscapes_instance_segmentation_resume/22884/icnet_is_cityscapes_instance_segmentation_00500_model.pkl
+    resume: runs/icnet_cityscapes_instance_segmentation_resume/9056/icnet_is_cityscapes_instance_segmentation_03500_model.pkl
 
     # resume: runs/icnet_cityscapes_instance_segmentation/27372/icnet_is_cityscapes_instance_segmentation_best_model.pkl 
     visdom: False

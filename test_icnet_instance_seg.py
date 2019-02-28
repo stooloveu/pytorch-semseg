@@ -118,6 +118,8 @@ def test(args):
         # float32 with F mode, resize back to orig_size
         pred = misc.imresize(pred, orig_size, "nearest", mode="F")
 
+    interested_semantic_class_train_id = 17
+
 
     outputs_inst = outputs_inst.cpu().detach().numpy()
 
@@ -145,24 +147,24 @@ def test(args):
 
     outputs_inst_transformed_single = np.copy(outputs_inst.reshape((h * w, c)))
     pred_transformed = pred_original.reshape((h * w))
-    pca.fit(outputs_inst_transformed_single[pred_transformed == 13, :])
+    pca.fit(outputs_inst_transformed_single[pred_transformed == interested_semantic_class_train_id, :])
     outputs_inst_transformed_single = pca.transform(outputs_inst_transformed_single)
     outputs_inst_transformed_single -= outputs_inst_transformed_single.min(axis = 0)
     outputs_inst_transformed_single /= outputs_inst_transformed_single.max(axis = 0)
-    outputs_inst_transformed_single[pred_transformed != 13, :] = 0
+    outputs_inst_transformed_single[pred_transformed != interested_semantic_class_train_id, :] = 0
     outputs_inst_single_img = outputs_inst_transformed_single.reshape((h, w, 3))
     outputs_inst_single_img = Image.fromarray((outputs_inst_single_img * 255).astype(np.uint8))
     outputs_inst_single_img.save("inst_single_"+args.out_path)
 
 
     outputs_inst_transformed_single = np.copy(outputs_inst.reshape((h * w, c)))
-    bandwidth = estimate_bandwidth(outputs_inst_transformed_single, quantile=0.05, n_samples=1000, n_jobs = 12)
+    bandwidth = estimate_bandwidth(outputs_inst_transformed_single[pred_transformed == interested_semantic_class_train_id, :], quantile=0.1, n_samples=1000, n_jobs = 12)
     print(bandwidth)
-    ms = MeanShift(bandwidth=0.4, bin_seeding=True, n_jobs = 12)
-    ms.fit(outputs_inst_transformed_single[pred_transformed == 13, :])
+    ms = MeanShift(bandwidth=bandwidth, bin_seeding=True, n_jobs = 12)
+    ms.fit(outputs_inst_transformed_single[pred_transformed == interested_semantic_class_train_id, :])
     clustering_label = ms.labels_
     inst_segment_map_single = np.zeros((h * w))
-    inst_segment_map_single[pred_transformed == 13] = clustering_label + 1
+    inst_segment_map_single[pred_transformed == interested_semantic_class_train_id] = clustering_label + 1
     inst_segment_map_single = inst_segment_map_single.reshape(h, w)
     cmap = plt.cm.jet
     norm = plt.Normalize(vmin=inst_segment_map_single.min(), vmax=inst_segment_map_single.max())
