@@ -107,3 +107,4 @@ datasets/
 # Runs
 runs/
 *.png
+tests/

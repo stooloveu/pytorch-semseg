@@ -1,0 +1,25 @@
+environment:
+conda activate segt
+
+train:
+	scrpit:
+	train_cs_icnet_instance_seg_resume.sh
+	!!!not train_cs_icnet_instance_seg.sh, 'train_cs_icnet_instance_seg.sh' is for training from original icnet model
+
+	train config (in yaml):
+	configs/icnet_cityscapes_instance_segmentation_resume.yml
+
+	current best model:
+	runs/icnet_cityscapes_instance_segmentation_resume/99609/icnet_is_cityscapes_instance_segmentation_08000_model.pkl
+
+everytime you run 'train_cs_icnet_instance_seg_resume.sh', it will create a log folder in 'runs/icnet_cityscapes_instance_segmentation_resume/'
+
+
+model:
+	ptsemseg/models/icnet_is.py
+
+test:
+	on a single image:
+	test_cs_icnet_is.sh
+	on dataset:
+	val_cs_icnet_is.sh

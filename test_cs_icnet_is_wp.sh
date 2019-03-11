@@ -1,5 +1,5 @@
-python  -W ignore test_icnet_instance_seg.py \
- --model_path runs/icnet_cityscapes_instance_segmentation_resume/99609/icnet_is_cityscapes_instance_segmentation_08000_model.pkl \
+python -W ignore test_icnet_instance_seg_wp.py \
+ --model_path runs/icnet_cityscapes_instance_segmentation_wp/59968/icnet_is_wp_cityscapes_instance_segmentation_wp_01500_model.pkl \
  --dataset cityscapes_instance_segmentation \
  --img_path datasets/cityscapes/leftImg8bit/train/ulm/ulm_000010_000019_leftImg8bit.png \
  --out_path out.png \

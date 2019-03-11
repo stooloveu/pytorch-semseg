@@ -780,6 +780,18 @@ def get_interp_size(input, s_factor=1, z_factor=1):  # for caffe
     resize_shape = (int(ori_h), int(ori_w))
     return resize_shape
 
+def get_coord_map(input, scale = 255):
+    B = input.shape[0]
+    H = input.shape[2]
+    W = input.shape[3]
+    
+    position_y = torch.linspace(-0.5 * scale, 0.5 * scale, W).repeat(H,1).unsqueeze(0)
+    position_x = torch.linspace(-0.5 * scale, 0.5 * scale, H).unsqueeze(1).repeat(1, W).unsqueeze(0)
+    position = torch.cat((position_y, position_x), dim=0).unsqueeze(0).repeat(B, 1, 1, 1).to(input.device)
+    coord_map = torch.cat((input, position), dim=1)
+
+    return coord_map
+
 
 def interp(input, output_size, mode="bilinear"):
     n, c, ih, iw = input.shape

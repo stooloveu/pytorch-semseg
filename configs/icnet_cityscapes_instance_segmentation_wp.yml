@@ -1,0 +1,40 @@
+model:
+    arch: icnet_is_wp
+data:
+    dataset: cityscapes_instance_segmentation_wp
+    train_split: train
+    val_split: val
+    img_rows: 1025
+    img_cols: 2049
+    path: datasets/cityscapes/
+training:
+    n_workers: 12
+    train_iters: 8000
+    batch_size: 12
+    val_interval: 8000
+    save_interval: 500
+    print_interval: 1
+    optimizer:
+        # name: adadelta
+        # lr: 2.0e-3
+        # name: adamax
+        # lr: 1.0e-6
+        name: asgd
+        lr: 1.0e-3
+    
+    loss: 
+        name: multi_scale_cross_entropy
+
+    lr_schedule: 
+        name: poly_lr
+        max_iter: 12000
+        decay_iter: 8000
+        gamma: 0.9
+        last_epoch: -1
+
+
+    momentum: 0.9
+    weight_decay: 0.0001
+    resume:  runs/icnet_cityscapes_instance_segmentation_wp/59968/icnet_is_wp_cityscapes_instance_segmentation_wp_01500_model.pkl
+    
+    visdom: False
